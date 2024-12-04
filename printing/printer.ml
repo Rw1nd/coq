@@ -1180,3 +1180,19 @@ let pr_goal gl =
   pr_goal (Proofview.Goal.sigma gl) (Proofview.Goal.goal gl)
 
 end
+
+let tabnum = ref 0
+let rec pr_tabnum s base =
+  if base <= 0 then s
+  else pr_tabnum (Pp.(++) (Pp.str "-")  s) (base - 1)
+
+let pr_info gl =
+  let open Pp in
+  let env = Proofview.Goal.env gl in
+  let evd = Proofview.Goal.sigma gl in
+  let g = Proofview.Goal.concl gl in
+  let hyps = Proofview.Goal.hyps gl in
+  let pp_hyps = List.map (fun x -> pr_enamed_decl env evd x) hyps in
+  let hyps_pp = List.fold_right (fun x acc -> x ++ (Pp.str "; ") ++ acc) pp_hyps (Pp.str " ") in
+  let _  = Feedback.msg_notice ((pr_tabnum (Pp.str "") !tabnum) ++ (str " ") ++ hyps_pp ++ str " ⊢ " ++ (pr_econstr_env env evd g)) in
+  ()

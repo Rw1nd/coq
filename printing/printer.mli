@@ -240,3 +240,7 @@ val pr_goal : Proofview.Goal.t -> Pp.t
 
 end
 (** Debug printers *)
+
+val tabnum : int ref
+
+val pr_info : Proofview.Goal.t -> unit

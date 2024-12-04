@@ -1418,6 +1418,30 @@ let induction_gen clear_flag isrec with_evars elim
   let ccl = Proofview.Goal.concl gl in
   let cls = Option.default allHypsAndConcl cls in
   let t = typ_of env evd c in
+
+  let make_ind t =
+    Feedback.msg_notice (Pp.(++) (Pp.str "typ is ") (Printer.pr_econstr_env env evd t));
+    let x =  EConstr.Unsafe.to_constr t in
+    let ind_name =
+      match Constr.kind x with
+      | Constr.Ind (ind1,  _) ->
+        ind1
+      | Constr.App (f, args) ->
+        let ind1 =
+          match Constr.kind f with
+          | Constr.Ind (ind1,  _) ->
+            ind1
+          | _ -> failwith "not an inductive type"
+        in
+        ind1
+      | _ -> failwith "not an inductive type"
+    in
+    let (mind_ind, one_ind) =  (Inductive.lookup_mind_specif env ind_name) in
+    let num = Array.length one_ind.mind_consnames in
+    Feedback.msg_info (str "induction_gen num  " ++ Pp.str (string_of_int num));
+  in
+  let _ = try make_ind t with _ -> () in
+
   let is_arg_pure_hyp =
     isVar evd c && not (mem_named_context_val (destVar evd c) (Global.named_context_val ()))
     && lbind == NoBindings && not with_evars && Option.is_empty eqname
@@ -1450,7 +1474,11 @@ let induction_gen clear_flag isrec with_evars elim
       isrec with_evars info_arg elim id arg t inhyps cls
     (induction_with_atomization_of_ind_arg
        isrec with_evars elim names id)
-  end
+  end >>= fun sigma ->
+    Proofview.Goal.enter begin fun gl ->
+    let _ = try Printer.pr_info gl with _ -> () in
+    Proofview.tclUNIT ()
+    end
 
 (* Induction on a list of arguments. First make induction arguments
    atomic (using letins), then do induction. The specificity here is
