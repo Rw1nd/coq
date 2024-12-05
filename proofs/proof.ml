@@ -120,9 +120,13 @@ let tree2dot t =
   let header = str "digraph G {\n" in
   let rec mkpp pre t =
     let (tac_name, context, goal, subt) = destnode t true in
-    (* let s = tac_name ++ str " [label=<Test<BR /><FONT POINT-SIZE=\"10\">" ++ context ++ str "⊢" ++ goal ++ str "];\n" in *)
     let tac_name = changename tac_name in
-    let s = tac_name ++ str ";\n" in
+    let s =
+      if string_of_ppcmds context = ""
+      then tac_name ++ str ";\n"
+      else tac_name ++ str " [label=<" ++ tac_name ++ str "<BR /><FONT POINT-SIZE=\"10\">" ++ context ++ str "⊢" ++ goal ++ str "</FONT>>];\n"
+    in
+    (* let s = tac_name ++ str ";\n" in  *)
     let s = s ++ pre ++ str " -> " ++ tac_name ++ str ";\n" in
     let pre = tac_name in
     match Array.length subt with
