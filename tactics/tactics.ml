@@ -1185,7 +1185,6 @@ let intro_forthcoming_last_then_gen avoid dep_flag bound n tac =
 
 let intros =
   intro_forthcoming_last_then_gen Id.Set.empty false None 0 (fun _ -> tclIDTAC)
-
 let intro_forthcoming_then_gen avoid move_flag ~dep bound n tac = match move_flag with
 | MoveLast ->
   (* Fast path *)

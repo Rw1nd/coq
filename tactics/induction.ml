@@ -70,6 +70,7 @@ exception UnsupportedInClause of bool
 exception DontKnowWhereToFindArgument
 exception MultipleAsAndUsingClauseOnlyList
 
+
 let error ?loc e =
   Loc.raise ?loc e
 
@@ -1407,6 +1408,9 @@ let has_generic_occurrences_but_goal cls id env sigma ccl =
   (* TODO: whd_evar of goal *)
   (cls.concl_occs != NoOccurrences || not (occur_var env sigma id ccl))
 
+
+let subid = ref (-1)
+
 let induction_gen clear_flag isrec with_evars elim
     ((_pending,(c,lbind)),(eqname,names) as arg) cls =
   let inhyps = match cls with
@@ -1438,6 +1442,10 @@ let induction_gen clear_flag isrec with_evars elim
     in
     let (mind_ind, one_ind) =  (Inductive.lookup_mind_specif env ind_name) in
     let num = Array.length one_ind.mind_consnames in
+    Proof.tree_branch_mark := List.cons num !Proof.tree_branch_mark;
+    Proof.tree_struct_mark := List.cons num !Proof.tree_struct_mark;
+    let _ = Proof.add_node2tree_with_hole !Proof.pt !Proof.tree_branch_mark num in
+    subid := num;
     Feedback.msg_info (str "induction_gen num  " ++ Pp.str (string_of_int num));
   in
   let _ = try make_ind t with _ -> () in
@@ -1474,9 +1482,22 @@ let induction_gen clear_flag isrec with_evars elim
       isrec with_evars info_arg elim id arg t inhyps cls
     (induction_with_atomization_of_ind_arg
        isrec with_evars elim names id)
-  end >>= fun sigma ->
+  end
+  >>= fun sigma ->
     Proofview.Goal.enter begin fun gl ->
-    let _ = try Printer.pr_info gl with _ -> () in
+    let open Pp in
+    let pr_i () =
+      let baseid = List.hd !Proof.tree_struct_mark in
+      let contextpp, gpp = Printer.pr_info gl in
+      if !subid < 0 then failwith "subid < 0";
+
+      let newnode = (Proof.Node (str "subgoal" ++ spc () ++ str (string_of_int (baseid - !subid)), contextpp, gpp, [|Leaf ()|])) in
+      let _ = Proof.add_node2tree !Proof.pt (!subid :: (List.tl !Proof.tree_branch_mark)) newnode in
+      subid := !subid - 1;
+      (* Proof.pt := Proof.Node (1, (Pp.str "Induction->", contextpp, gpp, !Proof.pt)); *)
+      ()
+    in
+    let _ = try pr_i () with e -> Feedback.msg_debug (Pp.str (Printexc.to_string e)) in
     Proofview.tclUNIT ()
     end
 
@@ -1527,6 +1548,8 @@ let induction_gen_l isrec with_evars elim names lc =
    principles).
    TODO: really unify induction with one and induction with several
    args *)
+
+
 let induction_destruct isrec with_evars (lc,elim) =
   match lc with
   | [] -> assert false (* ensured by syntax, but if called inside caml? *)

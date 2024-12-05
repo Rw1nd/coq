@@ -33,6 +33,104 @@ open Util
 
 module FocusKind = Dyn.Make()
 
+type proof_tree =
+| Leaf of unit
+| Node of Pp.t * Pp.t * Pp.t * (proof_tree Array.t)
+
+let tree_index = ref 0
+let pt = ref (Node (Pp.str "Root", Pp.str "", Pp.str "", [|Leaf ()|]))
+
+(* 分支标记 *)
+let tree_branch_mark = ref []
+
+(* 分支结构 *)
+let tree_struct_mark = ref []
+
+let pr_int_list l =
+  let open Pp in
+  let rec aux = function
+    | [] -> mt()
+    | [x] -> int x
+    | x::l -> int x ++ str ";" ++ aux l
+  in
+  str "[" ++ aux l ++ str "]"
+
+let destnode node ispr =
+  match node with
+  | Leaf () -> if ispr then (Pp.str "Leaf", Pp.str "", Pp.str "", [||]) else failwith "destnod Error"
+  | Node (tac_name, context, goal, subt) -> (tac_name, context, goal, subt)
+
+let rec layer2index layer =
+  let open Pp in
+  Feedback.msg_notice (str "layer: " ++ pr_int_list layer);
+  Feedback.msg_notice (str "tree_struct_mark: " ++ pr_int_list !tree_struct_mark);
+  let rec calc_index layer full_layer =
+    match layer, full_layer with
+    | [], [] -> []
+    | x::xs, y::ys ->  (y-x) :: calc_index xs ys
+    | _ -> failwith "layer2index ???"
+  in
+  if List.length layer != List.length !tree_struct_mark
+  then failwith "layer2index Error"
+  else
+
+    calc_index layer !tree_struct_mark
+
+let pr_pt pre t =
+  let open Pp in
+  let rec mkpp pre t =
+    let (tac_name, context, goal, subt) = destnode t true in
+    let s = (pre ++ tac_name ++ str ": " ++ context ++ str "⊢" ++ goal ++  str "-->\n") in
+    match Array.length subt with
+    | 0 -> s
+    | 1 ->
+        let r = match subt.(0) with
+        | Leaf () -> s
+        | _ -> s ++ mkpp pre subt.(0) in
+        r
+    | _ -> let r = list2pp (Pp.str "--" ++ pre) (Array.to_list subt) in
+            s ++ r
+  and list2pp pre l =
+    match l with
+    | [] -> Pp.mt()
+    | x::xs -> (mkpp pre x) ++ list2pp pre xs
+  in
+  Feedback.msg_notice (mkpp pre t);
+  Feedback.msg_notice (Pp.str "---------- End of Proof Tree ----------")
+
+let pr_node node =
+  let (tac_name, context, goal, subt) = destnode node true in
+  let s = Pp.(tac_name ++ str ": " ++ context ++ str "⊢" ++ goal) in
+  Feedback.msg_notice s
+
+let rec add_node2tree tree layer node =
+  let (tac_name, context, goal, subt) = destnode tree false in
+  match Array.length subt with
+  | 1 ->
+      let _ =
+      match subt.(0) with
+      | Leaf () ->
+          subt.(0) <- node
+      | _ -> add_node2tree subt.(0) layer node in
+      ()
+  | _ ->
+      let arrayindex = List.rev (layer2index layer) in
+      let i = List.hd arrayindex in
+      Feedback.msg_notice (Pp.str (string_of_int i));
+      pr_node subt.(i);
+      add_node2tree subt.(i) (List.tl layer) node
+      (* 这里可能有问题，因为默认layer为空时后没有分支 *)
+
+let add_node2tree_with_hole tree layer num =
+  let rec newarr num  =
+    match num with
+    | 0 -> [||]
+    | _ -> Array.append [|Node (Pp.str "Empty", Pp.str "", Pp.str "", [|Leaf ()|])|] (newarr (num - 1))
+  in
+  let holearr = newarr num in
+  add_node2tree !pt layer (Node (Pp.str "Induction/destruct", Pp.str "", Pp.str "", holearr))
+
+
 type 'a focus_kind = 'a FocusKind.tag
 type reason = NotThisWay | AlreadyNoFocus
 type unfocusable =
@@ -50,6 +148,7 @@ let new_focus_kind () =
   incr next_kind;
   FocusKind.anonymous r
 
+
 (* To be authorized to unfocus one must meet the condition prescribed by
     the action which focused.*)
 (* spiwack: we could consider having a list of authorized focus_kind instead
@@ -63,6 +162,7 @@ exception NoSuchGoals of int * int
 exception NoSuchGoal of Names.Id.t option
 
 exception FullyUnfocused
+
 
 let _ = CErrors.register_handler begin function
   | CannotUnfocusThisWay ->
@@ -145,7 +245,24 @@ let rec unroll_focus pv = function
 (* spiwack: a proof is considered completed even if its still focused, if the focus
    doesn't hide any goal.
    Unfocusing is handled in {!return}. *)
+
+
+
+let rec popmark () =
+  if !tree_branch_mark != []
+  then
+    let handx = (List.hd !tree_branch_mark) - 1 in
+    Feedback.msg_notice (pr_int_list !tree_branch_mark);
+      if handx <= 0
+        then let _ = tree_branch_mark := List.tl !tree_branch_mark in popmark ()
+        else tree_branch_mark := (handx)::(List.tl !tree_branch_mark);
+
+        (* Feedback.msg_notice (Pp.str "["); (List.iter (fun x -> Feedback.msg_notice (Pp.(++) (Pp.str (string_of_int x)) (Pp.str "; "))) !tree_branch_mark); Feedback.msg_notice (Pp.str "]"); *)
+        ()
+  else ()
+
 let is_done p =
+  let _ = popmark () in
   Proofview.finished p.proofview &&
   Proofview.finished (unroll_focus p.proofview p.focus_stack)
 
@@ -278,7 +395,13 @@ let end_of_stack = CondEndStack end_of_stack_kind
 
 let unfocused = is_last_focus end_of_stack_kind
 
+
 let start ~name ~poly ?typing_flags sigma goals =
+  tree_branch_mark := [];
+  tree_struct_mark := [];
+  pt := (Node (Pp.str "Root", Pp.str "", Pp.str "", [|Leaf ()|]));
+  let newnode = ((Node (Pp.str "start", Pp.str "", Pp.str "", [|Leaf ()|]))) in
+  let _ = try add_node2tree !pt !tree_branch_mark newnode with _ -> ()in
   let entry, proofview = Proofview.init sigma goals in
   let pr =
     { proofview
@@ -330,6 +453,7 @@ let return ?pid (p : t) =
     raise (OpenProof(pid, HasGivenUpGoals))
   else begin
     let p = unfocus end_of_stack_kind p () in
+    let _ = pr_pt (Pp.str "") !pt in
     Proofview.return p.proofview
   end
 

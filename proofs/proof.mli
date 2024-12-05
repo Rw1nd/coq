@@ -229,3 +229,16 @@ val get_goal_context_gen : t -> int -> Evd.evar_map * Environ.env
 (** [get_proof_context ()] gets the goal context for the first subgoal
     of the proof *)
 val get_proof_context : t -> Evd.evar_map * Environ.env
+
+type proof_tree =
+| Leaf of unit
+| Node of Pp.t * Pp.t * Pp.t * (proof_tree Array.t)
+
+val tree_index : int ref
+val pt : proof_tree ref
+val tree_branch_mark : int list ref
+val tree_struct_mark : int list ref
+
+val add_node2tree : proof_tree -> int list -> proof_tree -> unit
+val add_node2tree_with_hole  : proof_tree -> int list -> int -> unit
+val pr_int_list : int list -> Pp.t
