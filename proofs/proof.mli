@@ -239,6 +239,6 @@ val pt : proof_tree ref
 val tree_branch_mark : int list ref
 val tree_struct_mark : int list ref
 
-val add_node2tree : proof_tree -> int list -> proof_tree -> unit
+val add_node2tree : proof_tree -> int list -> int list -> proof_tree -> unit
 val add_node2tree_with_hole  : proof_tree -> int list -> int -> unit
 val pr_int_list : int list -> Pp.t

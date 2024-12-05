@@ -1410,6 +1410,7 @@ let has_generic_occurrences_but_goal cls id env sigma ccl =
 
 
 let subid = ref (-1)
+let subgoalid = ref 0
 
 let induction_gen clear_flag isrec with_evars elim
     ((_pending,(c,lbind)),(eqname,names) as arg) cls =
@@ -1424,7 +1425,7 @@ let induction_gen clear_flag isrec with_evars elim
   let t = typ_of env evd c in
 
   let make_ind t =
-    Feedback.msg_notice (Pp.(++) (Pp.str "typ is ") (Printer.pr_econstr_env env evd t));
+    (* Feedback.msg_notice (Pp.(++) (Pp.str "typ is ") (Printer.pr_econstr_env env evd t)); *)
     let x =  EConstr.Unsafe.to_constr t in
     let ind_name =
       match Constr.kind x with
@@ -1444,9 +1445,10 @@ let induction_gen clear_flag isrec with_evars elim
     let num = Array.length one_ind.mind_consnames in
     Proof.tree_branch_mark := List.cons num !Proof.tree_branch_mark;
     Proof.tree_struct_mark := List.cons num !Proof.tree_struct_mark;
+    subgoalid := !subgoalid + 1;
     let _ = Proof.add_node2tree_with_hole !Proof.pt !Proof.tree_branch_mark num in
     subid := num;
-    Feedback.msg_info (str "induction_gen num  " ++ Pp.str (string_of_int num));
+    (* Feedback.msg_info (str "induction_gen num  " ++ Pp.str (string_of_int num)); *)
   in
   let _ = try make_ind t with _ -> () in
 
@@ -1490,9 +1492,9 @@ let induction_gen clear_flag isrec with_evars elim
       let baseid = List.hd !Proof.tree_struct_mark in
       let contextpp, gpp = Printer.pr_info gl in
       if !subid < 0 then failwith "subid < 0";
-
-      let newnode = (Proof.Node (str "subgoal" ++ spc () ++ str (string_of_int (baseid - !subid)), contextpp, gpp, [|Leaf ()|])) in
-      let _ = Proof.add_node2tree !Proof.pt (!subid :: (List.tl !Proof.tree_branch_mark)) newnode in
+      (* Feedback.msg_notice (str "induction monad"); *)
+      let newnode = (Proof.Node (str "subgoal" ++ str (string_of_int !subgoalid) ++ str "_" ++ str (string_of_int (baseid - !subid)), contextpp, gpp, [|Leaf ()|])) in
+      let _ = Proof.add_node2tree !Proof.pt (!subid :: (List.tl !Proof.tree_branch_mark)) !Proof.tree_struct_mark newnode in
       subid := !subid - 1;
       (* Proof.pt := Proof.Node (1, (Pp.str "Induction->", contextpp, gpp, !Proof.pt)); *)
       ()

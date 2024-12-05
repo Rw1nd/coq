@@ -60,21 +60,22 @@ let destnode node ispr =
   | Leaf () -> if ispr then (Pp.str "Leaf", Pp.str "", Pp.str "", [||]) else failwith "destnod Error"
   | Node (tac_name, context, goal, subt) -> (tac_name, context, goal, subt)
 
-let rec layer2index layer =
+let rec layer2index layer base_layer =
   let open Pp in
-  Feedback.msg_notice (str "layer: " ++ pr_int_list layer);
-  Feedback.msg_notice (str "tree_struct_mark: " ++ pr_int_list !tree_struct_mark);
+  (* Feedback.msg_notice (str "layer: " ++ pr_int_list layer);
+  Feedback.msg_notice (str "tree_struct_mark: " ++ pr_int_list !tree_struct_mark); *)
+
   let rec calc_index layer full_layer =
     match layer, full_layer with
     | [], [] -> []
     | x::xs, y::ys ->  (y-x) :: calc_index xs ys
     | _ -> failwith "layer2index ???"
   in
-  if List.length layer != List.length !tree_struct_mark
+
+  if List.length layer != List.length base_layer
   then failwith "layer2index Error"
   else
-
-    calc_index layer !tree_struct_mark
+    calc_index layer base_layer
 
 let pr_pt pre t =
   let open Pp in
@@ -103,7 +104,45 @@ let pr_node node =
   let s = Pp.(tac_name ++ str ": " ++ context ++ str "⊢" ++ goal) in
   Feedback.msg_notice s
 
-let rec add_node2tree tree layer node =
+
+let empid = ref 0
+let indid = ref 0
+let changename name =
+  let open Pp in
+  let s = string_of_ppcmds name in
+  match s with
+  | "Induction/destruct" -> indid := !indid + 1 ; str "Ind" ++ str (string_of_int !indid)
+  | "Empty" -> empid := !empid + 1; str "Empty" ++ Pp.str (string_of_int !empid)
+  | _ -> name
+
+let tree2dot t =
+  let open Pp in
+  let header = str "digraph G {\n" in
+  let rec mkpp pre t =
+    let (tac_name, context, goal, subt) = destnode t true in
+    (* let s = tac_name ++ str " [label=<Test<BR /><FONT POINT-SIZE=\"10\">" ++ context ++ str "⊢" ++ goal ++ str "];\n" in *)
+    let tac_name = changename tac_name in
+    let s = tac_name ++ str ";\n" in
+    let s = s ++ pre ++ str " -> " ++ tac_name ++ str ";\n" in
+    let pre = tac_name in
+    match Array.length subt with
+    | 0 -> s
+    | 1 ->
+        let r = match subt.(0) with
+        | Leaf () -> s
+        | _ -> s ++ mkpp pre subt.(0) in
+        r
+    | _ -> let r = list2dot pre (Array.to_list subt) in
+            s ++ r
+  and list2dot pre l =
+    match l with
+    | [] -> str ""
+    | x::xs -> (mkpp pre x) ++ list2dot pre xs
+  in
+  Feedback.msg_notice (header ++ (mkpp (str "G") t) ++ str "}\n")
+
+
+let rec add_node2tree tree layer base_layer node =
   let (tac_name, context, goal, subt) = destnode tree false in
   match Array.length subt with
   | 1 ->
@@ -111,15 +150,17 @@ let rec add_node2tree tree layer node =
       match subt.(0) with
       | Leaf () ->
           subt.(0) <- node
-      | _ -> add_node2tree subt.(0) layer node in
+      | _ -> add_node2tree subt.(0) layer base_layer node in
       ()
   | _ ->
-      let arrayindex = List.rev (layer2index layer) in
+      let arrayindex = List.rev (layer2index layer base_layer) in
       let i = List.hd arrayindex in
+      (* Feedback.msg_notice (Pp.str "search leaf");
       Feedback.msg_notice (Pp.str (string_of_int i));
-      pr_node subt.(i);
-      add_node2tree subt.(i) (List.tl layer) node
+      pr_node subt.(i); *)
+      add_node2tree subt.(i) (List.tl (List.rev layer)) (List.tl (List.rev base_layer)) node
       (* 这里可能有问题，因为默认layer为空时后没有分支 *)
+
 
 let add_node2tree_with_hole tree layer num =
   let rec newarr num  =
@@ -128,7 +169,7 @@ let add_node2tree_with_hole tree layer num =
     | _ -> Array.append [|Node (Pp.str "Empty", Pp.str "", Pp.str "", [|Leaf ()|])|] (newarr (num - 1))
   in
   let holearr = newarr num in
-  add_node2tree !pt layer (Node (Pp.str "Induction/destruct", Pp.str "", Pp.str "", holearr))
+  add_node2tree !pt layer !tree_struct_mark (Node (Pp.str "Induction/destruct", Pp.str "", Pp.str "", holearr))
 
 
 type 'a focus_kind = 'a FocusKind.tag
@@ -246,15 +287,16 @@ let rec unroll_focus pv = function
    doesn't hide any goal.
    Unfocusing is handled in {!return}. *)
 
-
-
 let rec popmark () =
   if !tree_branch_mark != []
   then
     let handx = (List.hd !tree_branch_mark) - 1 in
-    Feedback.msg_notice (pr_int_list !tree_branch_mark);
+    (* Feedback.msg_notice (pr_int_list !tree_branch_mark); *)
       if handx <= 0
-        then let _ = tree_branch_mark := List.tl !tree_branch_mark in popmark ()
+        then
+          let _ = tree_branch_mark := List.tl !tree_branch_mark in
+          let _ = tree_struct_mark := List.tl !tree_struct_mark in
+          popmark ()
         else tree_branch_mark := (handx)::(List.tl !tree_branch_mark);
 
         (* Feedback.msg_notice (Pp.str "["); (List.iter (fun x -> Feedback.msg_notice (Pp.(++) (Pp.str (string_of_int x)) (Pp.str "; "))) !tree_branch_mark); Feedback.msg_notice (Pp.str "]"); *)
@@ -401,7 +443,7 @@ let start ~name ~poly ?typing_flags sigma goals =
   tree_struct_mark := [];
   pt := (Node (Pp.str "Root", Pp.str "", Pp.str "", [|Leaf ()|]));
   let newnode = ((Node (Pp.str "start", Pp.str "", Pp.str "", [|Leaf ()|]))) in
-  let _ = try add_node2tree !pt !tree_branch_mark newnode with _ -> ()in
+  let _ = try add_node2tree !pt !tree_branch_mark !tree_struct_mark newnode with _ -> ()in
   let entry, proofview = Proofview.init sigma goals in
   let pr =
     { proofview
@@ -454,6 +496,7 @@ let return ?pid (p : t) =
   else begin
     let p = unfocus end_of_stack_kind p () in
     let _ = pr_pt (Pp.str "") !pt in
+    let _ = tree2dot !pt in
     Proofview.return p.proofview
   end
 
