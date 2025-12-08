@@ -33,3 +33,6 @@ val interp_qed_delayed_proof
   -> control:Vernacexpr.control_flag list
   -> Vernacexpr.proof_end CAst.t
   -> Vernacstate.Interp.t
+
+open Yojson.Basic
+val jtmp : Yojson.Basic.t ref

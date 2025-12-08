@@ -78,6 +78,7 @@ let start_coq custom =
   (* Run phase *)
   custom.run ~opts custom_opts state
 
+
 (** ****************************************)
 (** Specific support for coqtop executable *)
 

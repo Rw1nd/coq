@@ -22,6 +22,7 @@
 *)
 type compilation_mode = BuildVo | BuildVos | BuildVok
 
+
 type t =
   { compilation_mode : compilation_mode
 
@@ -37,3 +38,6 @@ type t =
 
 val default : t
 val parse : string list -> t
+
+val current_filename : string ref
+val current_fullname : string ref

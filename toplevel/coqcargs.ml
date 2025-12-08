@@ -67,11 +67,17 @@ let add_compile ?echo copts s =
   in
   { copts with compile_file = Some (s,echo) }
 
+
+let current_filename = ref ""
+let current_fullname = ref ""
+
 let add_compile ?echo copts v_file =
   match copts.compile_file with
   | Some _ ->
     arg_error Pp.(str "More than one file to compile: " ++ str v_file)
   | None ->
+    current_fullname := v_file;
+    current_filename := Filename.basename v_file;
     add_compile ?echo copts v_file
 
 let parse arglist : t =

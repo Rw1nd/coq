@@ -13,6 +13,10 @@ open Synterp
 
 let vernac_pperr_endline = CDebug.create ~name:"vernacinterp" ()
 
+
+let jtmp = ref (`List [])
+let taccount = ref 0
+
 (* Timeout *)
 let vernac_timeout ~timeout (f : 'a -> 'b) (x : 'a) : 'b =
   match Control.timeout timeout f x with
@@ -91,6 +95,156 @@ let interp_control_entry ~loc (f : control_entry) ~st
   | ControlRedirect s ->
     Topfmt.with_output_to_file s (fun () -> fn ~st) ()
 
+let module_include = ref ""
+
+let get_id_from_module_entry mod_entry =
+  let (_, mod_path, _, _) = mod_entry in
+  Names.ModPath.to_string mod_path
+
+let get_vernacexpr_kind expr =
+  match expr with
+  | VernacSynterp x ->
+    let fl, k =
+      match x with
+      | EVernacBeginSection id -> true, "EVernacBeginSection"
+      | EVernacEndSegment id -> true, "EVernacEndSegment"
+
+      (* | EVernacDeclareModule (_, id, _,_ ) ->
+          let ids = Pputils.pr_lident id |> Pp.string_of_ppcmds in
+          localstack := ids :: !localstack *)
+      | EVernacDefineModule (_, id, _, _, mod_sig, enl) ->
+        let fl, k =
+          let enln = List.length enl in
+            if enln <> 0 then
+              let onehd = List.hd enl in
+              let incname = get_id_from_module_entry onehd in
+              (* let incname = match mod_sig with
+              | Enforce (_, mod_path, _, _) ->
+                Names.ModPath.to_string mod_path
+              | Check _ -> "" in  *)
+              module_include := incname;
+              true, "EVernacDefineModule_Include"
+            else
+              true, "EVernacDefineModule" in
+        fl,k
+
+      | EVernacDeclareModuleType (id, _, _,_,_) ->true, "EVernacDeclareModuleType"
+      | EVernacExtend _ -> taccount := !taccount + 1; true, "EVernacExtend"
+
+      | _ -> true, "" in fl, k
+
+  | VernacSynPure pure_expr ->
+      (* print_endline (get_synpure_vernac_expr pure_expr); *)
+
+      match pure_expr with
+      | VernacStartTheoremProof _ -> taccount := 0; true, "VernacStartTheoremProof"
+      | VernacInductive _ -> true, "VernacInductive"
+      | VernacFixpoint _ -> true, "VernacFixpoint"
+      | VernacDefinition _ -> true, "VernacDefinition"
+      | VernacSyntacticDefinition _ -> true , "VernacSyntacticDefinition"
+      | VernacAbort -> true , "VernacAbort"
+      | VernacEndProof _ -> true, "VernacEndProof"
+      (* | VernacProof _ -> true
+      | VernacBullet _ -> true *)
+      | _ -> false, ""
+
+
+let get_idname_vernac_expr_gen expr =
+  match expr with
+  | VernacSynterp x ->
+    let ids =
+      match x with
+      | EVernacBeginSection id ->
+          let ids = Pputils.pr_lident id |> Pp.string_of_ppcmds in
+          ids
+      | EVernacEndSegment id ->
+          let ids = Pputils.pr_lident id |> Pp.string_of_ppcmds in
+          ids
+
+      (* | EVernacDeclareModule (_, id, _,_ ) ->
+          let ids = Pputils.pr_lident id |> Pp.string_of_ppcmds in
+          localstack := ids :: !localstack *)
+      | EVernacDefineModule (_, id, _, _, _, enl) ->
+          let ids = Pputils.pr_lident id |> Pp.string_of_ppcmds in
+          ids
+      | EVernacDeclareModuleType (id, _, _,_,_) ->
+        let ids = Pputils.pr_lident id |> Pp.string_of_ppcmds in
+        ids
+      | _ -> "" in ids
+
+  | VernacSynPure pure_expr ->
+      match pure_expr with
+      | VernacStartTheoremProof (k, proof_exprl) ->
+        let ress =
+          try
+            let ((id, _), _) = List.hd proof_exprl in
+            Pputils.pr_lident id |> Pp.string_of_ppcmds
+          with _ -> "" in
+          ress
+
+      | VernacInductive (k, indl) ->
+        let ress =
+        try
+          let (inductive_expr, notation_dl) = List.hd indl in
+          let ((_, cumul_ind_decl), _, _, _) = inductive_expr in
+          let namel = fst cumul_ind_decl in
+          Pputils.pr_lident namel |> Pp.string_of_ppcmds
+        with _ -> "" in
+        ress
+      | VernacFixpoint (d, fixl) ->
+          let ress =
+            try
+              let x =  List.hd fixl in
+              Pputils.pr_lident x.fname |> Pp.string_of_ppcmds
+            with _ -> ""
+          in ress
+
+      | VernacDefinition (d, (namel, u), expr) ->
+        Pputils.pr_lname namel |> Pp.string_of_ppcmds
+      | _ -> ""
+
+let localstack = ref []
+let sectionstack = ref []
+let sectionflag = ref false
+
+
+
+let get_location_info expr =
+  match expr with
+  | VernacSynterp x ->
+    let _ =
+      match x with
+      | EVernacBeginSection id ->
+          sectionflag := true;
+          let ids = Pputils.pr_lident id |> Pp.string_of_ppcmds in
+          sectionstack := ids :: !sectionstack
+      | EVernacEndSegment id ->
+          let ids = Pputils.pr_lident id |> Pp.string_of_ppcmds in
+          if !sectionflag then
+            if List.hd !sectionstack = ids then
+              let _ = sectionstack := List.tl !sectionstack in
+              if List.length !sectionstack = 0 then sectionflag := false else ()
+            else
+              localstack := List.tl !localstack
+          else
+            localstack := List.tl !localstack
+
+      (* | EVernacDeclareModule (_, id, _,_ ) ->
+          let ids = Pputils.pr_lident id |> Pp.string_of_ppcmds in
+          localstack := ids :: !localstack *)
+      | EVernacDefineModule (_, id, _, _, _, enl) ->
+          let enln = List.length enl in
+          if enln <> 0 then
+            ()
+          else
+            let ids = Pputils.pr_lident id |> Pp.string_of_ppcmds in
+            localstack := ids :: !localstack
+      | EVernacDeclareModuleType (id, _, _,_,_) ->
+        let ids = Pputils.pr_lident id |> Pp.string_of_ppcmds in
+        localstack := ids :: !localstack
+      | _ -> () in ()
+  | VernacSynPure _ -> ()
+
 (* "locality" is the prefix "Local" attribute, while the "local" component
  * is the outdated/deprecated "Local" attribute of some vernacular commands
  * still parsed as the obsolete_locality grammar entry for retrocompatibility.
@@ -146,6 +300,39 @@ and vernac_load ~verbosely entries =
   stack, pm
 
 and interp_control ~st ({ CAst.v = cmd; loc }) =
+
+  let linenum = match loc with | None -> 0 | Some t -> t.line_nb in
+  let _ = get_location_info cmd.expr in
+  let _, kind = get_vernacexpr_kind cmd.expr in
+  let _ = if kind <> "" then
+    let idname = get_idname_vernac_expr_gen cmd.expr in
+    let tmp_vernac_expr:(vernac_expr option) = match cmd.expr with
+      | VernacSynPure pure_expr -> Some (VernacSynPure pure_expr)
+      | _ -> None
+    in
+
+    let content =
+      if kind = "EVernacDefineModule_Include" then
+        !module_include
+      else
+        match tmp_vernac_expr with
+        | Some x -> Ppvernac.pr_vernac_expr x |> Pp.string_of_ppcmds
+        | None -> ""
+    in
+    let mpath = List.fold_left (fun acc x -> acc ^ x ^ ".") "" (List.rev !localstack) in
+
+    let (resj:Yojson.Basic.t) = `Assoc [("idname", `String idname); ("scope", `String mpath) ;("kind", `String kind); ("line", `Int linenum); ("content", `String content); ("tactics_num", `Int !taccount)] in
+
+    let _ = match !jtmp with
+    | `List fields ->
+        let newjson = fields @ [resj] in
+         jtmp := (`List newjson);
+    | _ -> ()
+    in
+    (* print_endline (Yojson.Basic.to_string !jtmp); *)
+    (* save_info resj; *)
+    ()
+    else () in
   List.fold_right (fun flag fn -> interp_control_entry ~loc flag fn)
     cmd.control
     (fun ~st ->

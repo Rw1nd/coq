@@ -48,10 +48,39 @@ let coqc_main ((copts,_),stm_opts) injections ~opts =
   end;
   ()
 
+
+let save_info j =
+  let tempjsonfilepath = "/home/abc/work/parser_json/" in
+  let tempjsonname = String.sub !Coqcargs.current_filename 0 (String.length !Coqcargs.current_filename - 2)in
+  let fullpathname = !Coqcargs.current_fullname in
+  let open Yojson.Basic in
+  let path = tempjsonfilepath ^ tempjsonname ^ ".json" in
+  let newjson =
+    match j with
+      | `List fields ->
+          `Assoc [
+            ("filename",`String tempjsonname);
+            ("fullpath",`String fullpathname);
+            ("decl",`List fields)
+          ]
+      | _ ->
+          failwith "Invalid JSON format Other"
+    in
+    to_file path newjson
+
 let coqc_run copts ~opts injections =
   let _feeder = Feedback.add_feeder Coqloop.coqloop_feed in
   try
     coqc_main ~opts copts injections;
+    let open Yojson.Basic in
+
+    let _ =
+    try
+      save_info !Vernacinterp.jtmp
+    with _ -> ()
+    in
+
+    (* print_endline (Yojson.Basic.to_string !Vernacinterp.jtmp); *)
     exit 0
   with exn ->
     flush_all();
