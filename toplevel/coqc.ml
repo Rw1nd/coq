@@ -73,7 +73,6 @@ let coqc_run copts ~opts injections =
   try
     coqc_main ~opts copts injections;
     let open Yojson.Basic in
-
     let _ =
     try
       save_info !Vernacinterp.jtmp
@@ -81,6 +80,8 @@ let coqc_run copts ~opts injections =
     in
 
     (* print_endline (Yojson.Basic.to_string !Vernacinterp.jtmp); *)
+    print_endline ("[Debug Tac] " ^ (Yojson.Basic.pretty_to_string !Ltac_plugin.Tacinterp.tacinfo));
+
     exit 0
   with exn ->
     flush_all();

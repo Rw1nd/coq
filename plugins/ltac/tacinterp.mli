@@ -16,6 +16,8 @@ open Genarg
 open Redexpr
 open Tactypes
 
+val tacinfo : Yojson.Basic.t ref
+
 val ltac_trace_info : ltac_stack Exninfo.t
 
 module Value :

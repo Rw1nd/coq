@@ -34,5 +34,5 @@ val interp_qed_delayed_proof
   -> Vernacexpr.proof_end CAst.t
   -> Vernacstate.Interp.t
 
-open Yojson.Basic
+
 val jtmp : Yojson.Basic.t ref

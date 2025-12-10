@@ -42,6 +42,8 @@ open Proofview.Notations
 open Context.Named.Declaration
 open Ltac_pretype
 
+let tacinfo: Yojson.Basic.t ref = ref (`List [])
+
 let do_profile trace ?count_call tac =
   Profile_tactic.do_profile_gen (function
       | (_, c) :: _ -> Some (Pptactic.pp_ltac_call_kind c)
@@ -1119,6 +1121,8 @@ and eval_tactic_ist ist tac : unit Proofview.tactic =
   | TacAtom t ->
       let call = LtacAtomCall t in
       let (stack, _) = push_trace(loc,call) ist in
+      let xx = Pptactic.pr_glob_tactic (Global.env ()) tac in
+      print_endline ("[ltac] Interpreting atomic tactic: " ^ Pp.string_of_ppcmds xx);
       do_profile stack
         (catch_error_tac_loc loc stack (interp_atomic ist t))
   | TacFun _ | TacLetIn _ | TacMatchGoal _ | TacMatch _ -> interp_tactic ist tac
@@ -1839,6 +1843,16 @@ and interp_atomic ist tac : unit Proofview.tactic =
         let l,lp = List.split l in
         let sigma,el =
           Option.fold_left_map (interp_open_constr_with_bindings ist env) sigma el in
+          let pp = Pptactic.pr_atomic_tactic env sigma (TacInductionDestruct(isrec,ev,(lp,el))) in
+          print_endline (Pp.string_of_ppcmds pp);
+          print_endline ("Hypotheses: " ^ Pp.string_of_ppcmds (pr_named_context_of env sigma));
+          let newtacinfo:Yojson.Basic.t = 
+            match !tacinfo with 
+            | `List l -> `List ([`Assoc [("tactic", `String (Pp.string_of_ppcmds pp)); ("context", `String (Pp.string_of_ppcmds (pr_named_context_of env sigma)))]] @ l)
+            | _ -> !tacinfo in 
+          tacinfo := newtacinfo;
+        print_endline ("Updated tacinfo json: " ^ Yojson.Basic.pretty_to_string !tacinfo);
+
         Tacticals.tclTHEN (Proofview.Unsafe.tclEVARS sigma)
         (name_atomic ~env
           (TacInductionDestruct(isrec,ev,(lp,el)))
