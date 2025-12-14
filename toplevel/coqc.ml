@@ -78,9 +78,9 @@ let coqc_run copts ~opts injections =
       save_info !Vernacinterp.jtmp
     with _ -> ()
     in
-
+    let open Tactics in 
     (* print_endline (Yojson.Basic.to_string !Vernacinterp.jtmp); *)
-    print_endline ("[Debug Tac] " ^ (Yojson.Basic.pretty_to_string !Ltac_plugin.Tacinterp.tacinfo));
+    print_endline ("[Debug Tac] " ^ (Yojson.Basic.pretty_to_string !Equality.tacinfo));
 
     exit 0
   with exn ->

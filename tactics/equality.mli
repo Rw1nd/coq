@@ -17,6 +17,12 @@ open Tactypes
 open Tactics
 (*i*)
 
+val tacinfo : Yojson.Basic.t ref
+val arguinfo : Yojson.Basic.t ref
+val tac_context_tmp : string ref
+val tac_goal_tmp : string ref
+val tac_used_name_tmp : string ref
+
 type dep_proof_flag = bool (* true = support rewriting dependent proofs *)
 type freeze_evars_flag = bool (* true = don't instantiate existing evars *)
 

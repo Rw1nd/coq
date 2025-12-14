@@ -42,7 +42,8 @@ open Proofview.Notations
 open Context.Named.Declaration
 open Ltac_pretype
 
-let tacinfo: Yojson.Basic.t ref = ref (`List [])
+let tac_loc_tmp = ref None
+
 
 let do_profile trace ?count_call tac =
   Profile_tactic.do_profile_gen (function
@@ -1117,12 +1118,13 @@ let rec val_interp ist ?(appl=UnnamedAppl) (tac:glob_tactic_expr) : Val.t Ftacti
 
 and eval_tactic_ist ist tac : unit Proofview.tactic =
   let (loc, tac2) = CAst.(tac.loc, tac.v) in
+  tac_loc_tmp := loc;
   match tac2 with
   | TacAtom t ->
       let call = LtacAtomCall t in
       let (stack, _) = push_trace(loc,call) ist in
       let xx = Pptactic.pr_glob_tactic (Global.env ()) tac in
-      print_endline ("[ltac] Interpreting atomic tactic: " ^ Pp.string_of_ppcmds xx);
+      Equality.tac_used_name_tmp := Pp.string_of_ppcmds xx;
       do_profile stack
         (catch_error_tac_loc loc stack (interp_atomic ist t))
   | TacFun _ | TacLetIn _ | TacMatchGoal _ | TacMatch _ -> interp_tactic ist tac
@@ -1695,6 +1697,18 @@ and interp_atomic ist tac : unit Proofview.tactic =
             let f = Tacticals.tactic_of_delayed f in
             (k,(CAst.make ?loc f))) cb
         in
+
+        let glob_t = TacAtom tac in 
+        let tac_t = Pptactic.pr_glob_tactic env (CAst.make ?loc:!tac_loc_tmp glob_t) in
+        let goal_t = Printer.pr_econstr_env env sigma (Proofview.Goal.concl gl) in
+          print_endline ("Tactic: " ^ Pp.string_of_ppcmds tac_t);
+          print_endline ("Hypotheses: " ^ Pp.string_of_ppcmds (pr_named_context_of env sigma));
+          let newtacinfo:Yojson.Basic.t = 
+            match !Equality.tacinfo with 
+            | `List l -> `List ([`Assoc [("tactic", `String (Pp.string_of_ppcmds tac_t)); ("context", `String (Pp.string_of_ppcmds (pr_named_context_of env sigma))); ("goal", `String (Pp.string_of_ppcmds goal_t))]] @ l)
+            | _ -> !Equality.tacinfo in 
+          Equality.tacinfo := newtacinfo;     
+
         let tac = match cl with
           | [] -> Tactics.apply_with_delayed_bindings_gen a ev l
           | cl ->
@@ -1844,15 +1858,12 @@ and interp_atomic ist tac : unit Proofview.tactic =
         let sigma,el =
           Option.fold_left_map (interp_open_constr_with_bindings ist env) sigma el in
           let pp = Pptactic.pr_atomic_tactic env sigma (TacInductionDestruct(isrec,ev,(lp,el))) in
-          print_endline (Pp.string_of_ppcmds pp);
-          print_endline ("Hypotheses: " ^ Pp.string_of_ppcmds (pr_named_context_of env sigma));
+          let goal_t = Printer.pr_econstr_env env sigma (Proofview.Goal.concl gl) in
           let newtacinfo:Yojson.Basic.t = 
-            match !tacinfo with 
-            | `List l -> `List ([`Assoc [("tactic", `String (Pp.string_of_ppcmds pp)); ("context", `String (Pp.string_of_ppcmds (pr_named_context_of env sigma)))]] @ l)
-            | _ -> !tacinfo in 
-          tacinfo := newtacinfo;
-        print_endline ("Updated tacinfo json: " ^ Yojson.Basic.pretty_to_string !tacinfo);
-
+            match !Equality.tacinfo with 
+            | `List l -> `List ([`Assoc [("tactic", `String (Pp.string_of_ppcmds pp)); ("context", `String (Pp.string_of_ppcmds (pr_named_context_of env sigma))); ("goal", `String (Pp.string_of_ppcmds goal_t))]] @ l)
+            | _ -> !Equality.tacinfo in 
+          Equality.tacinfo := newtacinfo;      
         Tacticals.tclTHEN (Proofview.Unsafe.tclEVARS sigma)
         (name_atomic ~env
           (TacInductionDestruct(isrec,ev,(lp,el)))
@@ -1927,6 +1938,15 @@ and interp_atomic ist tac : unit Proofview.tactic =
         let env = Proofview.Goal.env gl in
         let sigma = project gl in
         let cl = interp_clause ist env sigma cl in
+
+        let glob_t = TacAtom tac in 
+        let tac_t = Pptactic.pr_glob_tactic env (CAst.make ?loc:!tac_loc_tmp glob_t) in
+        Equality.tac_used_name_tmp := Pp.string_of_ppcmds tac_t;
+        let goal_t = Printer.pr_econstr_env env sigma (Proofview.Goal.concl gl) in
+        Equality.tac_goal_tmp := Pp.string_of_ppcmds goal_t;
+        Equality.tac_context_tmp := Pp.string_of_ppcmds (pr_named_context_of env sigma);
+
+
         name_atomic ~env
           (TacRewrite (ev,l,cl,Option.map ignore by))
           (Equality.general_multi_rewrite ev l' cl
