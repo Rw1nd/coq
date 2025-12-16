@@ -14,6 +14,11 @@ open Evd
 open Locus
 open Tactypes
 
+val tacinfo : Yojson.Basic.t ref
+val tac_context_tmp : string ref
+val tac_goal_tmp : string ref
+val tac_used_name_tmp : string ref
+
 (** A special exception for levels for the Fail tactic *)
 exception FailError of int * Pp.t Lazy.t
 

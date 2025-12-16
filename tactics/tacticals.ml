@@ -27,6 +27,11 @@ module NamedDecl = Context.Named.Declaration
 (*   Tacticals       *)
 (*********************)
 
+let tacinfo: Yojson.Basic.t ref = ref (`List [])
+let tac_used_name_tmp = ref ""
+let tac_context_tmp = ref ""
+let tac_goal_tmp = ref ""
+
 exception FailError of int * Pp.t Lazy.t
 
 let catch_failerror (e, info) =

@@ -44,6 +44,8 @@ open Context.Named.Declaration
 module RelDecl = Context.Rel.Declaration
 module NamedDecl = Context.Named.Declaration
 
+
+
 let tclEVARS = Proofview.Unsafe.tclEVARS
 let tclEVARSTHEN sigma t = Proofview.tclTHEN (tclEVARS sigma) t
 
@@ -1802,6 +1804,7 @@ let general_apply ?(with_classes=true) ?(respect_opaque=false) with_delta with_d
   let concl = Proofview.Goal.concl gl in
   let sigma = Tacmach.project gl in
   let id = try Some (destVar sigma c) with DestKO -> None in
+
   (* The actual type of the theorem. It will be matched against the
   goal. If this fails, then the head constant will be unfolded step by
   step. *)

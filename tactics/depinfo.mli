@@ -1,0 +1,1 @@
+val getinfo : Environ.env -> Evd.evar_map -> EConstr.t -> Yojson.Basic.t 

@@ -49,12 +49,17 @@ let coqc_main ((copts,_),stm_opts) injections ~opts =
   ()
 
 
-let save_info j =
+let save_info j istac =
   let tempjsonfilepath = "/home/abc/work/parser_json/" in
   let tempjsonname = String.sub !Coqcargs.current_filename 0 (String.length !Coqcargs.current_filename - 2)in
   let fullpathname = !Coqcargs.current_fullname in
   let open Yojson.Basic in
-  let path = tempjsonfilepath ^ tempjsonname ^ ".json" in
+  let path = 
+    if istac then
+      tempjsonfilepath ^ tempjsonname ^ "_withtac.json"
+    else
+      tempjsonfilepath ^ tempjsonname ^ ".json" 
+    in
   let newjson =
     match j with
       | `List fields ->
@@ -68,6 +73,7 @@ let save_info j =
     in
     to_file path newjson
 
+
 let coqc_run copts ~opts injections =
   let _feeder = Feedback.add_feeder Coqloop.coqloop_feed in
   try
@@ -75,12 +81,13 @@ let coqc_run copts ~opts injections =
     let open Yojson.Basic in
     let _ =
     try
-      save_info !Vernacinterp.jtmp
+      save_info !Vernacinterp.jtmp false;
+      (* save_info !Tacticals.tacinfo true *)
     with _ -> ()
     in
     let open Tactics in 
-    (* print_endline (Yojson.Basic.to_string !Vernacinterp.jtmp); *)
-    print_endline ("[Debug Tac] " ^ (Yojson.Basic.pretty_to_string !Equality.tacinfo));
+    (* print_endline ("[Debug Vernac] " ^ Yojson.Basic.pretty_to_string !Vernacinterp.jtmp); *)
+    (* print_endline ("[Debug Tac] " ^ (Yojson.Basic.pretty_to_string !Tacticals.tacinfo)); *)
 
     exit 0
   with exn ->

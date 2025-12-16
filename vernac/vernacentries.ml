@@ -2396,7 +2396,8 @@ let translate_vernac_synterp ?loc ~atts v = let open Vernactypes in match v with
 
 
 
-let translate_pure_vernac ?loc ~atts v = let open Vernactypes in match v with
+let translate_pure_vernac ?loc ~atts v = 
+  let open Vernactypes in match v with
   | VernacAbortAll
   | VernacRestart
   | VernacUndo _

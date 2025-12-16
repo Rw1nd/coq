@@ -44,6 +44,21 @@ open Ltac_pretype
 
 let tac_loc_tmp = ref None
 
+let add_obj_in_obj jsonl newl = 
+  let objl = match jsonl with | `List l -> l | _ -> failwith "Unexpected json format in vernac" in
+  try
+    let obj = List.hd (List.rev objl) in 
+    let newobj = 
+      match obj with
+      | `Assoc fields -> 
+          let fields = List.remove_assoc "tacinfo" fields in
+          `Assoc (fields @ [("tacinfo", newl)])
+      | _ -> obj
+      in
+    let res = List.rev (List.tl (List.rev objl)) @ [newobj] in
+    `List res
+  with _ -> 
+      jsonl
 
 let do_profile trace ?count_call tac =
   Profile_tactic.do_profile_gen (function
@@ -1124,7 +1139,7 @@ and eval_tactic_ist ist tac : unit Proofview.tactic =
       let call = LtacAtomCall t in
       let (stack, _) = push_trace(loc,call) ist in
       let xx = Pptactic.pr_glob_tactic (Global.env ()) tac in
-      Equality.tac_used_name_tmp := Pp.string_of_ppcmds xx;
+      Tacticals.tac_used_name_tmp := Pp.string_of_ppcmds xx;
       do_profile stack
         (catch_error_tac_loc loc stack (interp_atomic ist t))
   | TacFun _ | TacLetIn _ | TacMatchGoal _ | TacMatch _ -> interp_tactic ist tac
@@ -1688,12 +1703,29 @@ and interp_atomic ist tac : unit Proofview.tactic =
       end
   | TacApply (a,ev,cb,cl) ->
       (* spiwack: until the tactic is in the monad *)
+      let argus_l = ref (`List []) in 
       Proofview.Trace.name_tactic (fun () -> Pp.str"<apply>") begin
       Proofview.Goal.enter begin fun gl ->
         let env = Proofview.Goal.env gl in
         let sigma = project gl in
         let l = List.map (fun (k,c) ->
             let loc, f = interp_open_constr_with_bindings_loc ist c in
+            let _ = 
+              try
+            let _, (ori_constr, bind_constr) =  f env sigma in
+            let _,new_tys = Typing.type_of env sigma ori_constr in
+            let open Depinfo in 
+            let arg_info = getinfo env sigma new_tys in
+            (* print_endline ("[apply] " ^ (Pp.string_of_ppcmds (Printer.pr_econstr_env env sigma ori_constr)));
+            print_endline ("[apply] inferred types: " ^ (Pp.string_of_ppcmds (Printer.pr_econstr_env env sigma new_tys)));
+            print_endline ("[apply] " ^ (Pp.string_of_ppcmds (Miscprint.pr_bindings  (fun x -> Printer.pr_econstr_env env sigma x) (fun x -> Printer.pr_econstr_env env sigma x) bind_constr))); *)
+            let newj = match !argus_l with 
+            | `List lx -> `List (lx @ [`Assoc [("argu", `String (Pp.string_of_ppcmds (Printer.pr_econstr_env env sigma ori_constr))); ("arug_type", `String (Pp.string_of_ppcmds (Printer.pr_econstr_env env sigma new_tys))); ("argu_type_info", arg_info)]])
+            | _ -> !argus_l in
+            argus_l := newj;
+            ()
+            with _ -> () in
+
             let f = Tacticals.tactic_of_delayed f in
             (k,(CAst.make ?loc f))) cb
         in
@@ -1701,13 +1733,15 @@ and interp_atomic ist tac : unit Proofview.tactic =
         let glob_t = TacAtom tac in 
         let tac_t = Pptactic.pr_glob_tactic env (CAst.make ?loc:!tac_loc_tmp glob_t) in
         let goal_t = Printer.pr_econstr_env env sigma (Proofview.Goal.concl gl) in
-          print_endline ("Tactic: " ^ Pp.string_of_ppcmds tac_t);
-          print_endline ("Hypotheses: " ^ Pp.string_of_ppcmds (pr_named_context_of env sigma));
-          let newtacinfo:Yojson.Basic.t = 
-            match !Equality.tacinfo with 
-            | `List l -> `List ([`Assoc [("tactic", `String (Pp.string_of_ppcmds tac_t)); ("context", `String (Pp.string_of_ppcmds (pr_named_context_of env sigma))); ("goal", `String (Pp.string_of_ppcmds goal_t))]] @ l)
-            | _ -> !Equality.tacinfo in 
-          Equality.tacinfo := newtacinfo;     
+
+        print_endline ("[apply] tactic: " ^ (Pp.string_of_ppcmds tac_t));
+
+        let newtacinfo:Yojson.Basic.t = 
+          match !Tacticals.tacinfo with 
+          | `List lx -> `List ([`Assoc [("tactic", `String (Pp.string_of_ppcmds tac_t)); ("context", `String (Pp.string_of_ppcmds (pr_named_context_of env sigma))); ("goal", `String (Pp.string_of_ppcmds goal_t)); ("argus", !argus_l)]] @ lx)
+          | _ -> !Tacticals.tacinfo in 
+        Tacticals.tacinfo := newtacinfo;
+        Vernacinterp.jtmp := add_obj_in_obj !Vernacinterp.jtmp !Tacticals.tacinfo;
 
         let tac = match cl with
           | [] -> Tactics.apply_with_delayed_bindings_gen a ev l
@@ -1838,6 +1872,7 @@ and interp_atomic ist tac : unit Proofview.tactic =
   | TacInductionDestruct (isrec,ev,(l,el)) ->
       (* spiwack: some unknown part of destruct needs the goal to be
          prenormalised. *)
+      let argus_l = ref (`List []) in
       Proofview.Goal.enter begin fun gl ->
         let env = Proofview.Goal.env gl in
         let sigma = project gl in
@@ -1851,6 +1886,25 @@ and interp_atomic ist tac : unit Proofview.tactic =
             let ipatsp = ipats in
             let ipats = interp_or_and_intro_pattern_option ist env sigma ipats in
             let cls = Option.map (interp_clause ist env sigma) cls in
+            let open Depinfo in 
+            let _ = 
+            try
+              let _, dest_args = c in 
+                match dest_args with
+                | ElimOnConstr ft -> 
+                    let sigma_n, (ori_constr, bind_constr) = ft env sigma in 
+                    let _,new_tys = Typing.type_of env sigma_n ori_constr in
+                    let arg_info = getinfo env sigma new_tys in
+                    let newj = match !argus_l with 
+                    | `List lx -> `List (lx @[`Assoc [("argu", `String (Pp.string_of_ppcmds (Printer.pr_econstr_env env sigma_n ori_constr))); ("arug_type", `String (Pp.string_of_ppcmds (Printer.pr_econstr_env env sigma_n new_tys))); "argu_type_info", arg_info]])
+                    | _ -> !argus_l in
+                    argus_l := newj;
+                    ()
+                
+                | _ -> ()
+              with _ -> ()
+          in
+
             ((c,(ipato,ipats),cls),(cp,(ipato,ipatsp),cls))
           end l
         in
@@ -1860,10 +1914,11 @@ and interp_atomic ist tac : unit Proofview.tactic =
           let pp = Pptactic.pr_atomic_tactic env sigma (TacInductionDestruct(isrec,ev,(lp,el))) in
           let goal_t = Printer.pr_econstr_env env sigma (Proofview.Goal.concl gl) in
           let newtacinfo:Yojson.Basic.t = 
-            match !Equality.tacinfo with 
-            | `List l -> `List ([`Assoc [("tactic", `String (Pp.string_of_ppcmds pp)); ("context", `String (Pp.string_of_ppcmds (pr_named_context_of env sigma))); ("goal", `String (Pp.string_of_ppcmds goal_t))]] @ l)
-            | _ -> !Equality.tacinfo in 
-          Equality.tacinfo := newtacinfo;      
+            match !Tacticals.tacinfo with 
+            | `List l -> `List ([`Assoc [("tactic", `String (Pp.string_of_ppcmds pp)); ("context", `String (Pp.string_of_ppcmds (pr_named_context_of env sigma))); ("goal", `String (Pp.string_of_ppcmds goal_t)); ("argus", !argus_l)]] @ l)
+            | _ -> !Tacticals.tacinfo in 
+          Tacticals.tacinfo := newtacinfo;      
+          Vernacinterp.jtmp := add_obj_in_obj !Vernacinterp.jtmp !Tacticals.tacinfo;
         Tacticals.tclTHEN (Proofview.Unsafe.tclEVARS sigma)
         (name_atomic ~env
           (TacInductionDestruct(isrec,ev,(lp,el)))
@@ -1929,11 +1984,27 @@ and interp_atomic ist tac : unit Proofview.tactic =
 
   (* Equality and inversion *)
   | TacRewrite (ev,l,cl,by) ->
+      let argus_l = ref (`List []) in
       Proofview.Goal.enter begin fun gl ->
         let l' = List.map (fun (b,m,(keep,c)) ->
           let f env sigma =
             interp_open_constr_with_bindings ist env sigma c
           in
+
+            let env_t = Proofview.Goal.env gl in
+            let sigma_t = Proofview.Goal.sigma gl in
+            let _ = 
+                try
+              let _, (ori_constr, bind_constr) =  f env_t sigma_t in
+              let _,new_tys = Typing.type_of env_t sigma_t ori_constr in
+              let arg_info = Depinfo.getinfo env_t sigma_t new_tys in
+              let newj = match !argus_l with 
+              | `List lx -> `List (lx @ [`Assoc [("argu", `String (Pp.string_of_ppcmds (Printer.pr_econstr_env env_t sigma_t ori_constr))); ("arug_type", `String (Pp.string_of_ppcmds (Printer.pr_econstr_env env_t sigma_t new_tys))); ("argu_type_info", arg_info)]])
+              | _ -> !argus_l in
+              argus_l := newj;
+              () 
+              with _ -> () in
+          
           (b,m,keep,f)) l in
         let env = Proofview.Goal.env gl in
         let sigma = project gl in
@@ -1941,11 +2012,17 @@ and interp_atomic ist tac : unit Proofview.tactic =
 
         let glob_t = TacAtom tac in 
         let tac_t = Pptactic.pr_glob_tactic env (CAst.make ?loc:!tac_loc_tmp glob_t) in
-        Equality.tac_used_name_tmp := Pp.string_of_ppcmds tac_t;
+        Tacticals.tac_used_name_tmp := Pp.string_of_ppcmds tac_t;
         let goal_t = Printer.pr_econstr_env env sigma (Proofview.Goal.concl gl) in
-        Equality.tac_goal_tmp := Pp.string_of_ppcmds goal_t;
-        Equality.tac_context_tmp := Pp.string_of_ppcmds (pr_named_context_of env sigma);
+        Tacticals.tac_goal_tmp := Pp.string_of_ppcmds goal_t;
+        Tacticals.tac_context_tmp := Pp.string_of_ppcmds (pr_named_context_of env sigma);
 
+        let newtacinfo:Yojson.Basic.t = 
+          match !Tacticals.tacinfo with 
+          | `List lx -> `List ([`Assoc [("tactic", `String (Pp.string_of_ppcmds tac_t)); ("context", `String (Pp.string_of_ppcmds (pr_named_context_of env sigma))); ("goal", `String (Pp.string_of_ppcmds goal_t)); ("argus", !argus_l)]] @ lx)
+          | _ -> !Tacticals.tacinfo in 
+        Tacticals.tacinfo := newtacinfo;     
+        Vernacinterp.jtmp := add_obj_in_obj !Vernacinterp.jtmp !Tacticals.tacinfo;
 
         name_atomic ~env
           (TacRewrite (ev,l,cl,Option.map ignore by))

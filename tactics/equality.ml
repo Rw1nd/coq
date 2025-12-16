@@ -48,12 +48,7 @@ open Combinators
 
 module NamedDecl = Context.Named.Declaration
 
-let tacinfo: Yojson.Basic.t ref = ref (`List [])
-let arguinfo : Yojson.Basic.t ref = ref (`List [])
-let tac_used_name_tmp = ref ""
-let tac_context_tmp = ref ""
-let tac_goal_tmp = ref ""
-let debug_int = ref 0
+
 
 (* Options *)
 
@@ -546,20 +541,6 @@ let apply_special_clear_request clear_flag f =
     let env = Proofview.Goal.env gl in
     try
       let (sigma, (c, bl)) = f env sigma in
-
-      let argui = Pp.string_of_ppcmds (Printer.pr_econstr_env env sigma c) in
-      let (newsig, argu_typ) = Typing.type_of env sigma c in
-      print_endline ("Rewriting using lemma: " ^ argui);
-      print_endline ("Its type is: " ^ (Pp.string_of_ppcmds (Printer.pr_econstr_env env newsig argu_typ)));
-      let newtacinfo = 
-        match !arguinfo with
-        | `List l -> 
-            let argu_typ_str = Pp.string_of_ppcmds (Printer.pr_econstr_env env newsig argu_typ) in
-            `List (l @ [ `Assoc [ ("argu", `String argui); ("argu_typ", `String argu_typ_str) ]])
-        | _ -> !arguinfo 
-      in 
-      arguinfo := newtacinfo;
-      
       let c = try Some (destVar sigma c) with DestKO -> None in
       apply_clear_request clear_flag (use_clear_hyp_by_default ()) c
     with
@@ -593,24 +574,8 @@ let general_multi_rewrite with_evars l cl tac =
   in
 
   let rec loop = function
-    | [] ->
-      begin
-        let newtacinfo:Yojson.Basic.t = 
-          match !tacinfo with 
-          | `List l -> `List ([`Assoc [("tactic", `String (!tac_used_name_tmp)); ("context", `String (!tac_context_tmp)); ("goal", `String (!tac_goal_tmp)); ("Argulist", !arguinfo) ]] @ l)
-          | _ -> !tacinfo 
-        in 
-        print_endline ("First");
-        print_endline (string_of_int !debug_int);
-        debug_int := !debug_int + 1;
-        print_endline ("Argu info: " ^ (Yojson.Basic.pretty_to_string !arguinfo));
-        tacinfo := newtacinfo;   
-        Proofview.tclUNIT ()
-      end
+    | [] -> Proofview.tclUNIT ()
     | (l2r,m,clear_flag,c)::l ->
-        print_endline ("second");
-        print_endline (string_of_int !debug_int);
-        debug_int := !debug_int + 1;
         tclTHENFIRST
           (tclTHEN (doN l2r c m) (apply_special_clear_request clear_flag c)) (loop l)
   in 

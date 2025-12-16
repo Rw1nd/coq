@@ -129,7 +129,7 @@ let get_vernacexpr_kind expr =
         fl,k
 
       | EVernacDeclareModuleType (id, _, _,_,_) ->true, "EVernacDeclareModuleType"
-      | EVernacExtend _ -> taccount := !taccount + 1; true, "EVernacExtend"
+      (* | EVernacExtend _ -> taccount := !taccount + 1; true, "EVernacExtend" *)
 
       | _ -> true, "" in fl, k
 
@@ -137,7 +137,7 @@ let get_vernacexpr_kind expr =
       (* print_endline (get_synpure_vernac_expr pure_expr); *)
 
       match pure_expr with
-      | VernacStartTheoremProof _ -> taccount := 0; true, "VernacStartTheoremProof"
+      | VernacStartTheoremProof _ -> taccount := 0; Tacticals.tacinfo := (`List []); true, "VernacStartTheoremProof"
       | VernacInductive _ -> true, "VernacInductive"
       | VernacFixpoint _ -> true, "VernacFixpoint"
       | VernacDefinition _ -> true, "VernacDefinition"
